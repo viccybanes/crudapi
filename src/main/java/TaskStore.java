@@ -52,6 +52,19 @@ public class TaskStore implements AutoCloseable {
         }
     }
 
+    public Task create(String title) throws SQLException {
+        try (var insert = db.prepareStatement("INSERT INTO tasks (title, done) VALUES (?, ?)")) {
+            insert.setString(1, title);
+            insert.setInt(2, 0);
+            insert.executeUpdate();
+        }
+        try (var query = db.prepareStatement("SELECT last_insert_rowid()");
+             var rows = query.executeQuery()) {
+            rows.next();
+            return find(rows.getLong(1));
+        }
+    }
+
     @Override
     public void close() throws SQLException {
         db.close();

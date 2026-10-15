@@ -21,6 +21,8 @@ public class ApiCheck {
                     check(rows.next() && rows.getInt(1) == 3, "Seeds duplicated");
                 }
             }
+            long createdId;
+            String title = "O'Brien'); DROP TABLE tasks; --";
             try (var api = new TaskApi(database, 0)) {
                 base = "http://localhost:" + api.port();
                 var response = request("GET", "/tasks", null, 200);
@@ -28,8 +30,22 @@ public class ApiCheck {
                 request("GET", "/tasks/1", null, 200);
                 request("GET", "/tasks/999", null, 404);
                 request("GET", "/tasks/1%20OR%201=1", null, 404);
+                for (String invalid : new String[]{"{}", "{\"title\":\" \"}", "{\"title\":4}", "null", "[]", "{", "{title:'bad'}"}) {
+                    request("POST", "/tasks", invalid, 400);
+                }
+                var created = JsonParser.parseString(request("POST", "/tasks",
+                        "{\"title\":\"" + title + "\"}", 201)).getAsJsonObject();
+                createdId = created.get("id").getAsLong();
+                check(!created.get("done").getAsBoolean(), "New task should be unfinished");
+                check(created.get("title").getAsString().equals(title), "Title changed");
             }
-            System.out.println("PASS: database setup, three restarts, SQL reads and 404s");
+            try (var api = new TaskApi(database, 0)) {
+                base = "http://localhost:" + api.port();
+                var saved = JsonParser.parseString(request("GET", "/tasks/" + createdId, null, 200)).getAsJsonObject();
+                check(saved.get("title").getAsString().equals(title), "Create did not survive restart");
+                check(JsonParser.parseString(request("GET", "/tasks", null, 200)).getAsJsonArray().size() == 4, "Seed count changed");
+            }
+            System.out.println("PASS: setup, SQL reads, validation, parameter binding and create persistence");
         } finally {
             Files.deleteIfExists(database);
             Files.delete(directory);
