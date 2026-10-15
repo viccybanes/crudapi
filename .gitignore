@@ -1,4 +1,5 @@
 node_modules/
+target/
 tasks.db
 tasks.db-journal
 tasks.db-wal
