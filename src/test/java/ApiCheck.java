@@ -72,8 +72,16 @@ public class ApiCheck {
                 base = "http://localhost:" + api.port();
                 request("GET", "/tasks/" + createdId, null, 404);
                 check(JsonParser.parseString(request("GET", "/tasks", null, 200)).getAsJsonArray().size() == 3, "Delete did not persist");
+                try (var db = DriverManager.getConnection("jdbc:sqlite:" + database);
+                     var statement = db.createStatement()) {
+                    statement.executeUpdate("UPDATE tasks SET done = 1");
+                    var tasks = JsonParser.parseString(request("GET", "/tasks", null, 200)).getAsJsonArray();
+                    for (var task : tasks) check(task.getAsJsonObject().get("done").getAsBoolean(), "Direct SQL update not visible");
+                    statement.executeUpdate("DELETE FROM tasks WHERE done = 1");
+                    check(JsonParser.parseString(request("GET", "/tasks", null, 200)).getAsJsonArray().isEmpty(), "Direct SQL delete not visible");
+                }
             }
-            System.out.println("PASS: setup, CRUD, JSON validation, parameter binding and restart persistence");
+            System.out.println("PASS: setup, CRUD, validation, parameter binding, restart persistence and live SQL changes");
         } finally {
             Files.deleteIfExists(database);
             Files.delete(directory);
