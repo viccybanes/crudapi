@@ -10,6 +10,7 @@ import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+import java.nio.file.Files;
 import java.sql.SQLException;
 import java.util.Map;
 
@@ -49,6 +50,10 @@ public class TaskApi implements AutoCloseable {
             send(exchange, 200, Map.of("name", "TASK API", "version", "1.0", "endpoints", new String[]{"/tasks"}));
         } else if (method.equals("GET") && path.equals("/health")) {
             send(exchange, 200, Map.of("status", "OK"));
+        } else if (method.equals("GET") && (path.equals("/docs") || path.equals("/docs/"))) {
+            sendBytes(exchange, 200, "text/html; charset=utf-8", Files.readAllBytes(Path.of("docs/index.html")));
+        } else if (method.equals("GET") && path.equals("/openapi.json")) {
+            sendBytes(exchange, 200, "application/json; charset=utf-8", Files.readAllBytes(Path.of("openapi.json")));
         } else if (method.equals("GET") && path.equals("/tasks")) {
             send(exchange, 200, store.all());
         } else if (method.equals("POST") && path.equals("/tasks")) {
@@ -71,6 +76,23 @@ public class TaskApi implements AutoCloseable {
                 send(exchange, 404, Map.of("error", "Task not found"));
             } else if (method.equals("GET")) {
                 send(exchange, 200, task);
+            } else if (method.equals("PUT")) {
+                var body = body(exchange);
+                boolean hasTitle = body.has("title");
+                boolean hasDone = body.has("done");
+                if ((!hasTitle && !hasDone)
+                        || (hasTitle && !validTitle(body.get("title")))
+                        || (hasDone && (!body.get("done").isJsonPrimitive()
+                        || !body.get("done").getAsJsonPrimitive().isBoolean()))) {
+                    send(exchange, 400, Map.of("error", "Provide a valid title and/or done value"));
+                } else {
+                    send(exchange, 200, store.update(id,
+                            hasTitle ? body.get("title").getAsString() : task.title(),
+                            hasDone ? body.get("done").getAsBoolean() : task.done()));
+                }
+            } else if (method.equals("DELETE")) {
+                store.delete(id);
+                exchange.sendResponseHeaders(204, -1);
             } else {
                 send(exchange, 405, Map.of("error", "Method not allowed"));
             }
@@ -96,7 +118,11 @@ public class TaskApi implements AutoCloseable {
 
     private static void send(HttpExchange exchange, int status, Object body) throws IOException {
         byte[] bytes = JSON.toJson(body).getBytes(StandardCharsets.UTF_8);
-        exchange.getResponseHeaders().set("Content-Type", "application/json; charset=utf-8");
+        sendBytes(exchange, status, "application/json; charset=utf-8", bytes);
+    }
+
+    private static void sendBytes(HttpExchange exchange, int status, String contentType, byte[] bytes) throws IOException {
+        exchange.getResponseHeaders().set("Content-Type", contentType);
         exchange.sendResponseHeaders(status, bytes.length);
         exchange.getResponseBody().write(bytes);
     }

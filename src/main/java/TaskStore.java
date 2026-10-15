@@ -65,6 +65,23 @@ public class TaskStore implements AutoCloseable {
         }
     }
 
+    public Task update(long id, String title, boolean done) throws SQLException {
+        try (var update = db.prepareStatement("UPDATE tasks SET title = ?, done = ? WHERE id = ?")) {
+            update.setString(1, title);
+            update.setInt(2, done ? 1 : 0);
+            update.setLong(3, id);
+            update.executeUpdate();
+        }
+        return find(id);
+    }
+
+    public void delete(long id) throws SQLException {
+        try (var delete = db.prepareStatement("DELETE FROM tasks WHERE id = ?")) {
+            delete.setLong(1, id);
+            delete.executeUpdate();
+        }
+    }
+
     @Override
     public void close() throws SQLException {
         db.close();

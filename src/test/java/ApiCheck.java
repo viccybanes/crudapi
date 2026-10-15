@@ -26,6 +26,10 @@ public class ApiCheck {
             try (var api = new TaskApi(database, 0)) {
                 base = "http://localhost:" + api.port();
                 var response = request("GET", "/tasks", null, 200);
+                request("GET", "/", null, 200);
+                request("GET", "/health", null, 200);
+                check(request("GET", "/docs", null, 200).contains("SwaggerUIBundle"), "Swagger page missing");
+                check(JsonParser.parseString(request("GET", "/openapi.json", null, 200)).getAsJsonObject().has("paths"), "OpenAPI missing");
                 check(JsonParser.parseString(response).getAsJsonArray().size() == 3, "Missing seeds");
                 request("GET", "/tasks/1", null, 200);
                 request("GET", "/tasks/999", null, 404);
@@ -44,8 +48,32 @@ public class ApiCheck {
                 var saved = JsonParser.parseString(request("GET", "/tasks/" + createdId, null, 200)).getAsJsonObject();
                 check(saved.get("title").getAsString().equals(title), "Create did not survive restart");
                 check(JsonParser.parseString(request("GET", "/tasks", null, 200)).getAsJsonArray().size() == 4, "Seed count changed");
+                String path = "/tasks/" + createdId;
+                for (String invalid : new String[]{"{}", "{\"title\":\" \"}", "{\"done\":\"true\"}", "{\"done\":1}", "{\"done\":null}", "{\"title\":null}", "[]", "{"}) {
+                    request("PUT", path, invalid, 400);
+                }
+                var renamed = JsonParser.parseString(request("PUT", path, "{\"title\":\"Renamed\"}", 200)).getAsJsonObject();
+                check(!renamed.get("done").getAsBoolean(), "Title update changed done");
+                var completed = JsonParser.parseString(request("PUT", path, "{\"done\":true}", 200)).getAsJsonObject();
+                check(completed.get("title").getAsString().equals("Renamed"), "Done update changed title");
+                check(completed.get("done").getAsBoolean(), "Task not completed");
+                request("PUT", "/tasks/999", "{\"done\":true}", 404);
+                request("DELETE", "/tasks/999", null, 404);
             }
-            System.out.println("PASS: setup, SQL reads, validation, parameter binding and create persistence");
+            try (var api = new TaskApi(database, 0)) {
+                base = "http://localhost:" + api.port();
+                String path = "/tasks/" + createdId;
+                var saved = JsonParser.parseString(request("GET", path, null, 200)).getAsJsonObject();
+                check(saved.get("done").getAsBoolean(), "Update did not survive restart");
+                check(request("DELETE", path, null, 204).isEmpty(), "204 must have no body");
+                request("GET", path, null, 404);
+            }
+            try (var api = new TaskApi(database, 0)) {
+                base = "http://localhost:" + api.port();
+                request("GET", "/tasks/" + createdId, null, 404);
+                check(JsonParser.parseString(request("GET", "/tasks", null, 200)).getAsJsonArray().size() == 3, "Delete did not persist");
+            }
+            System.out.println("PASS: setup, CRUD, JSON validation, parameter binding and restart persistence");
         } finally {
             Files.deleteIfExists(database);
             Files.delete(directory);
