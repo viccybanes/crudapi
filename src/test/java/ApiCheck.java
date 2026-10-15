@@ -31,7 +31,8 @@ public class ApiCheck {
                 check(request("GET", "/docs", null, 200).contains("SwaggerUIBundle"), "Swagger page missing");
                 check(JsonParser.parseString(request("GET", "/openapi.json", null, 200)).getAsJsonObject().has("paths"), "OpenAPI missing");
                 check(JsonParser.parseString(response).getAsJsonArray().size() == 3, "Missing seeds");
-                request("GET", "/tasks/1", null, 200);
+                var seed = JsonParser.parseString(request("GET", "/tasks/1", null, 200)).getAsJsonObject();
+                check(seed.get("description").getAsString().equals("This is task 1"), "A1 seed description changed");
                 request("GET", "/tasks/999", null, 404);
                 request("GET", "/tasks/1%20OR%201=1", null, 404);
                 for (String invalid : new String[]{"{}", "{\"title\":\" \"}", "{\"title\":4}", "null", "[]", "{", "{title:'bad'}"}) {
@@ -42,6 +43,7 @@ public class ApiCheck {
                 createdId = created.get("id").getAsLong();
                 check(!created.get("done").getAsBoolean(), "New task should be unfinished");
                 check(created.get("title").getAsString().equals(title), "Title changed");
+                check(!created.has("description"), "New task response changed from A1");
             }
             try (var api = new TaskApi(database, 0)) {
                 base = "http://localhost:" + api.port();
@@ -80,6 +82,17 @@ public class ApiCheck {
                     statement.executeUpdate("DELETE FROM tasks WHERE done = 1");
                     check(JsonParser.parseString(request("GET", "/tasks", null, 200)).getAsJsonArray().isEmpty(), "Direct SQL delete not visible");
                 }
+            }
+            Files.delete(database);
+            try (var db = DriverManager.getConnection("jdbc:sqlite:" + database);
+                 var statement = db.createStatement()) {
+                statement.executeUpdate("CREATE TABLE tasks (id INTEGER PRIMARY KEY, title TEXT, done INTEGER)");
+                statement.executeUpdate("INSERT INTO tasks VALUES (1, 'Task 1', 0), (9, 'Existing task', 1)");
+            }
+            try (var store = new TaskStore(database)) {
+                check(store.all().size() == 2, "Migration reseeded existing database");
+                check(store.find(1).description().equals("This is task 1"), "Legacy description missing");
+                check(store.find(9).title().equals("Existing task") && store.find(9).done(), "Existing data changed");
             }
             System.out.println("PASS: setup, CRUD, validation, parameter binding, restart persistence and live SQL changes");
         } finally {
