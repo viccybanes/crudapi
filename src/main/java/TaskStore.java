@@ -2,8 +2,11 @@ import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.SQLException;
+import java.util.ArrayList;
+import java.util.List;
 
 public class TaskStore implements AutoCloseable {
+    public record Task(long id, String title, boolean done) {}
     private final Connection db;
 
     public TaskStore(Path file) throws SQLException {
@@ -23,6 +26,28 @@ public class TaskStore implements AutoCloseable {
                         insert.executeUpdate();
                     }
                 }
+            }
+        }
+    }
+
+    public List<Task> all() throws SQLException {
+        var tasks = new ArrayList<Task>();
+        try (var query = db.prepareStatement("SELECT * FROM tasks");
+             var rows = query.executeQuery()) {
+            while (rows.next()) {
+                tasks.add(new Task(rows.getLong("id"), rows.getString("title"), rows.getInt("done") != 0));
+            }
+        }
+        return tasks;
+    }
+
+    public Task find(long id) throws SQLException {
+        try (var query = db.prepareStatement("SELECT * FROM tasks WHERE id = ?")) {
+            query.setLong(1, id);
+            try (var rows = query.executeQuery()) {
+                return rows.next()
+                        ? new Task(rows.getLong("id"), rows.getString("title"), rows.getInt("done") != 0)
+                        : null;
             }
         }
     }
