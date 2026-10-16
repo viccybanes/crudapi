@@ -80,19 +80,6 @@ This uses a temporary database and an available port. It checks automatic setup,
 
 The running app was also checked with `curl.exe -i`: create returned 201, reads and updates returned 200, deletion returned an empty 204, missing tasks returned JSON 404 errors, and an empty title returned a JSON 400 error. A task created before stopping the Java process was returned after starting it again.
 
-## Section 6 requirements
-
-- [x] Five CRUD endpoints keep the required task fields and request bodies.
-- [x] Tasks are stored in `tasks.db` through SQL.
-- [x] Persistence is verified through the API and DB Browser.
-- [x] Missing database files and tables are created automatically.
-- [x] Three examples are seeded when empty; restarts do not duplicate them.
-- [x] Client values use parameterized SQL placeholders.
-- [x] Success codes are 200/201/204; invalid bodies and missing IDs return JSON 400/404 errors.
-- [x] README includes the SQLite choice, run command, SQL example, and DB Browser screenshots.
-- [ ] Push the stage commits to the same public GitHub repository.
-
-Stages 0-5 have separate local commits. Optional extras and the bonus stage are not included.
 
 ## Swagger UI
 
