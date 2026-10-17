@@ -1,100 +1,135 @@
 # Task API
 
-A small Java 17 REST API for creating, reading, updating, and deleting tasks. It uses Java's HTTP server, SQLite JDBC for storage, and Gson for JSON. Interactive OpenAPI documentation is available through Swagger UI.
+A Java 17 REST API for tasks, backed by PostgreSQL. Docker Compose starts the API and database together. Routes, validation, and JSON responses are carried over from A1/A2.
 
 ## Install and run
 
-Install JDK 17 or newer and put its `java` and `javac` commands on PATH. From the project directory on Windows, run:
+Install and start Docker Desktop with Linux containers enabled. Open a new terminal after installing it. Java and Maven run inside the API container.
 
-```powershell
-.\run.ps1
-```
-
-The API runs at `http://localhost:3000`, and Swagger UI is available at `http://localhost:3000/docs`.
-
-The script selects the JDK on PATH and uses the included Maven wrapper to download Maven and the Java dependencies on the first run. Internet access is needed for that download and for Swagger UI's browser assets. Stop the server with Ctrl+C.
-
-On macOS or Linux, set `JAVA_HOME` to your JDK and run `./mvnw -q compile exec:java`.
-
-## SQLite storage
-
-SQLite keeps the database in one file, needs no separate database server, and saves changes across server restarts. The app creates `tasks.db` in the project directory and creates the `tasks` table automatically. The file is git-ignored, so a fresh clone creates its own database.
-
-The table has `id INTEGER PRIMARY KEY`, `title TEXT`, and `done INTEGER`. An additional nullable `description TEXT` column preserves the optional descriptions on A1's example tasks. SQLite stores `done` as 0 or 1; the API returns a JSON boolean. The database assigns new IDs. Three example tasks are inserted only when the table is empty, so restarting a populated database does not duplicate them.
-
-Request bodies are unchanged. Seed responses retain their `description`; new tasks return `id`, `title`, and `done`, just as in A1. An existing three-column `tasks.db` is upgraded automatically without deleting its rows. All values supplied by clients are bound through JDBC prepared statements.
-
-## Endpoints
-
-| Method | Endpoint | Description | Success | Errors |
-| --- | --- | --- | --- | --- |
-| `GET` | `/` | Show API name, version, and task endpoint | `200` | — |
-| `GET` | `/health` | Check whether the API is running | `200` | — |
-| `GET` | `/tasks` | List all tasks | `200` | — |
-| `POST` | `/tasks` | Create a task from a JSON `title` | `201` | `400` |
-| `GET` | `/tasks/:id` | Get one task by ID | `200` | `404` |
-| `PUT` | `/tasks/:id` | Update a task's `title` and/or `done` value | `200` | `400`, `404` |
-| `DELETE` | `/tasks/:id` | Delete a task | `204` | `404` |
-| `GET` | `/docs` | Open the interactive Swagger UI | `200` | — |
-
-## Example response
-
-```text
-PS> curl.exe -s -i http://localhost:3000/health
-HTTP/1.1 200 OK
-Content-Type: application/json; charset=utf-8
-Content-Length: 15
-
-{"status":"OK"}
-```
-
-## Database inspection and SQL
-
-Open the project's `tasks.db` in DB Browser for SQLite and select **Browse Data**, then the `tasks` table. This screenshot shows the three seeds and a task created through the API, still present after restarting the Java process:
-
-![Persisted tasks in DB Browser](docs/database.png)
-
-In **Execute SQL**, this query returned Task 2 and Task 3, the two completed seed tasks:
-
-```sql
-SELECT * FROM tasks WHERE done = 1;
-```
-
-![Completed seed tasks returned by SQL](docs/completed-tasks.png)
-
-After creating the verification task with ID 4, `UPDATE tasks SET done = 1 WHERE id = 4;` was run in DB Browser and saved with **Write Changes**. `GET /tasks/4` immediately returned `done: true`, without restarting the API.
-
-![Direct SQL update and matching rows](docs/sql-change.png)
-
-The five Stage 4 queries are saved in [docs/queries.sql](docs/queries.sql). The update-all and delete statements are checked against a disposable database by the verification program.
-
-## Verification
-
-With `JAVA_HOME` pointing to your JDK, run:
-
-```powershell
-.\mvnw.cmd -q test-compile exec:java "-Dexec.mainClass=ApiCheck" "-Dexec.classpathScope=test"
-```
-
-This uses a temporary database and an available port. It checks automatic setup, three seed restarts, all CRUD endpoints, invalid JSON and field types, partial updates, SQL-looking titles, live direct SQL changes, empty 204 bodies, and persistence after closing and reopening the server and database. It never modifies the project's database.
-
-The running app was also checked with `curl.exe -i`: create returned 201, reads and updates returned 200, deletion returned an empty 204, missing tasks returned JSON 404 errors, and an empty title returned a JSON 400 error. A task created before stopping the Java process was returned after starting it again.
-
-
-## Swagger UI
-
-Swagger UI documents all task endpoints and lets you send requests from the browser.
-
-![Task API Swagger UI](docs/swagger-ui.png)
-
-## Postgres setup (A3)
-
-Install and start Docker Desktop. Copy `.env.example` to `.env` before starting Postgres:
+Copy the local configuration once:
 
 ```powershell
 Copy-Item .env.example .env
-docker compose up -d db
-docker compose exec db psql -U postgres -d tasks
 ```
 
-The `taskdata` volume keeps database rows when the container is recreated. Local passwords belong in the git-ignored `.env` file.
+Start the whole stack:
+
+```powershell
+docker compose up
+```
+
+The first run downloads images, builds the app, creates the table, and seeds three tasks. Compose waits for Postgres readiness before starting the API.
+
+- API: http://localhost:3000
+- Tasks: http://localhost:3000/tasks
+- Swagger UI: http://localhost:3000/docs
+
+`run.ps1` is also a shortcut for `docker compose up`. After changing Java source or dependencies, use `docker compose up --build`. Internet access is needed for initial downloads and Swagger UI's browser assets.
+
+## Environment variables
+
+[.env.example](.env.example) contains local-development placeholders. Keep real values in the git-ignored `.env`:
+
+| Variable | Purpose |
+| --- | --- |
+| `POSTGRES_PASSWORD` | Bootstrap administrator password |
+| `APP_DB_PASSWORD` | Password for the separate `taskapp` API login |
+| `DATABASE_URL` | PostgreSQL JDBC connection string used by Java |
+
+Keep the password in `DATABASE_URL` identical to `APP_DB_PASSWORD`. The database hostname inside Compose is `db`. `.env` is excluded from Git and the Docker build context. Credentials are supplied through the environment. Changing `.env` does not update passwords already initialized in an existing database volume.
+
+## Storage
+
+The `db` service uses the official `postgres:17` image. Its named `taskdata` volume is mounted at `/var/lib/postgresql/data`, so rows outlive the containers.
+
+`TaskStore.java` contains all database operations. It creates `tasks` with `id SERIAL PRIMARY KEY`, `title TEXT`, and `done BOOLEAN`. A nullable `description TEXT` column preserves descriptions on A1/A2's seeded examples. New tasks still return `id`, `title`, and `done`. Three examples are inserted only when the table is empty; restarting a populated database does not duplicate them.
+
+JDBC prepared statements bind client values with `?` placeholders. The API login owns its database but has no superuser, role-creation, or database-creation privileges. The old SQLite `tasks.db` is left intact; this stack uses Postgres.
+
+## Endpoints
+
+| Method | Endpoint | Purpose | Success | Errors |
+| --- | --- | --- | --- | --- |
+| `GET` | `/` | API name, version, and task endpoint | `200` | - |
+| `GET` | `/health` | API liveness | `200` | - |
+| `GET` | `/tasks` | List tasks | `200` | - |
+| `POST` | `/tasks` | Create from a JSON `title` | `201` | `400` |
+| `GET` | `/tasks/:id` | Read one task | `200` | `404` |
+| `PUT` | `/tasks/:id` | Update `title` and/or `done` | `200` | `400`, `404` |
+| `DELETE` | `/tasks/:id` | Delete a task | `204` | `404` |
+| `GET` | `/docs` | Interactive Swagger UI | `200` | - |
+| `GET` | `/openapi.json` | Existing OpenAPI contract | `200` | - |
+
+Invalid-body and missing-task responses contain a JSON `error` message. Successful deletion has an empty body.
+
+## Curl evidence
+
+```text
+PS> curl.exe -s -i http://localhost:3000/tasks
+HTTP/1.1 200 OK
+Date: Sat, 17 Oct 2026 18:25:55 GMT
+Content-type: application/json; charset=utf-8
+Content-length: 209
+
+[{"id":1,"title":"Task 1","description":"This is task 1","done":false},{"id":2,"title":"Task 2","description":"This is task 2","done":true},{"id":3,"title":"Task 3","description":"This is task 3","done":true}]
+```
+
+The full CRUD run, including 201/200/204/400/404 responses, is saved in [docs/curl-checks.txt](docs/curl-checks.txt).
+
+## Inspect Postgres
+
+```powershell
+docker compose exec db psql -U postgres -d tasks -c '\dt' -c 'SELECT id, title, done, description FROM tasks;'
+```
+
+This screenshot shows the three seeded rows in Postgres through a temporary local database viewer. The submitted stack uses the `api` and `db` services.
+
+![Tasks stored in PostgreSQL](docs/postgres-data.png)
+
+Example query:
+
+```sql
+SELECT * FROM tasks WHERE done = TRUE;
+```
+
+More examples are in [docs/queries.sql](docs/queries.sql). Use a disposable test schema for its update-all and delete statements.
+
+## Verification
+
+With the stack running:
+
+```powershell
+docker compose exec api mvn -q test-compile exec:java "-Dexec.mainClass=ApiCheck" "-Dexec.classpathScope=test"
+```
+
+The checks create a uniquely named temporary schema and remove it afterward. They check table creation, repeated seed initialization, CRUD, validation, SQL-looking titles, partial updates, JSON errors, empty 204 bodies, and persistence after reconnecting. They do not modify `public.tasks`.
+
+A clean checkout with the current changes was also started using a copy of `.env.example`. It created exactly three tasks, kept exactly three after three API-container restarts, and passed the same verification program.
+
+Full-stack persistence was checked separately: a task was created and completed through the API, then the stack was stopped and recreated:
+
+```powershell
+docker compose down
+docker compose up -d --wait
+```
+
+The same ID, updated title, and completion status remained. Do not add `--volumes` when testing persistence: that option removes stored database data.
+
+## Section 6 requirements
+
+- [x] Postgres runs in a container; one `docker compose up` starts both services.
+- [x] The ignored `.env` supplies `DATABASE_URL`; `.env.example` lists the required keys.
+- [x] Missing tables are created automatically; three examples are seeded only when empty.
+- [x] Five CRUD endpoints use parameterized Postgres queries and retain their response shapes.
+- [x] Success codes are 200/201/204; invalid bodies and unknown IDs return JSON 400/404 errors.
+- [x] A named volume preserves data across a full Compose down/up.
+- [x] README includes startup, environment variables, endpoint table, curl output, and database screenshot.
+- [ ] Push the stage commits to the public GitHub repository.
+
+Optional extras and the bonus stage are not included.
+
+## Swagger UI
+
+Swagger UI documents task endpoints and lets you send requests from the browser.
+
+![Task API Swagger UI](docs/swagger-ui.png)
