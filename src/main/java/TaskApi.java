@@ -19,8 +19,8 @@ public class TaskApi implements AutoCloseable {
     private final TaskStore store;
     private final HttpServer server;
 
-    public TaskApi(Path database, int port) throws SQLException, IOException {
-        store = new TaskStore(database);
+    public TaskApi(String databaseUrl, int port) throws SQLException, IOException {
+        store = new TaskStore(databaseUrl);
         server = HttpServer.create(new InetSocketAddress("localhost", port), 0);
         server.createContext("/", this::handle);
         server.start();
@@ -134,7 +134,7 @@ public class TaskApi implements AutoCloseable {
     }
 
     public static void main(String[] args) throws Exception {
-        var api = new TaskApi(Path.of("tasks.db"), 3000);
+        var api = new TaskApi(TaskStore.databaseUrl(), 3000);
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             try {
                 api.close();

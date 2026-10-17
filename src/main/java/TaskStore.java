@@ -1,4 +1,3 @@
-import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.SQLException;
@@ -9,32 +8,19 @@ public class TaskStore implements AutoCloseable {
     public record Task(long id, String title, String description, boolean done) {}
     private final Connection db;
 
-    public TaskStore(Path file) throws SQLException {
-        db = DriverManager.getConnection("jdbc:sqlite:" + file.toAbsolutePath());
+    public static String databaseUrl() {
+        String url = System.getenv("DATABASE_URL");
+        if (url == null || url.isBlank()) {
+            throw new IllegalStateException("DATABASE_URL is required; start with docker compose up");
+        }
+        return url;
+    }
+
+    public TaskStore(String url) throws SQLException {
+        db = DriverManager.getConnection(url);
         try (var statement = db.createStatement()) {
             statement.executeUpdate("CREATE TABLE IF NOT EXISTS tasks "
-                    + "(id INTEGER PRIMARY KEY, title TEXT, done INTEGER, description TEXT)");
-        }
-        // Keep A1's optional seed descriptions when opening the earlier three-column database.
-        boolean hasDescription = false;
-        try (var statement = db.createStatement();
-             var columns = statement.executeQuery("PRAGMA table_info(tasks)")) {
-            while (columns.next()) {
-                if (columns.getString("name").equals("description")) hasDescription = true;
-            }
-        }
-        if (!hasDescription) {
-            try (var statement = db.createStatement()) {
-                statement.executeUpdate("ALTER TABLE tasks ADD COLUMN description TEXT");
-            }
-            try (var update = db.prepareStatement("UPDATE tasks SET description = ? WHERE id = ? AND title = ?")) {
-                for (int i = 1; i <= 3; i++) {
-                    update.setString(1, "This is task " + i);
-                    update.setInt(2, i);
-                    update.setString(3, "Task " + i);
-                    update.executeUpdate();
-                }
-            }
+                    + "(id SERIAL PRIMARY KEY, title TEXT, done BOOLEAN, description TEXT)");
         }
         try (var statement = db.prepareStatement("SELECT COUNT(*) FROM tasks");
              var rows = statement.executeQuery()) {
@@ -43,7 +29,7 @@ public class TaskStore implements AutoCloseable {
                         "INSERT INTO tasks (title, done, description) VALUES (?, ?, ?)")) {
                     for (int i = 1; i <= 3; i++) {
                         insert.setString(1, "Task " + i);
-                        insert.setInt(2, i == 1 ? 0 : 1);
+                        insert.setBoolean(2, i != 1);
                         insert.setString(3, "This is task " + i);
                         insert.executeUpdate();
                     }
