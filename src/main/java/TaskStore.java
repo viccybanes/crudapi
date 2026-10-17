@@ -43,7 +43,7 @@ public class TaskStore implements AutoCloseable {
         try (var query = db.prepareStatement("SELECT * FROM tasks");
              var rows = query.executeQuery()) {
             while (rows.next()) {
-                tasks.add(new Task(rows.getLong("id"), rows.getString("title"), rows.getString("description"), rows.getInt("done") != 0));
+                tasks.add(new Task(rows.getLong("id"), rows.getString("title"), rows.getString("description"), rows.getBoolean("done")));
             }
         }
         return tasks;
@@ -54,7 +54,7 @@ public class TaskStore implements AutoCloseable {
             query.setLong(1, id);
             try (var rows = query.executeQuery()) {
                 return rows.next()
-                        ? new Task(rows.getLong("id"), rows.getString("title"), rows.getString("description"), rows.getInt("done") != 0)
+                        ? new Task(rows.getLong("id"), rows.getString("title"), rows.getString("description"), rows.getBoolean("done"))
                         : null;
             }
         }
