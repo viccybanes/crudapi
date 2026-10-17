@@ -21,7 +21,7 @@ public class TaskApi implements AutoCloseable {
 
     public TaskApi(String databaseUrl, int port) throws SQLException, IOException {
         store = new TaskStore(databaseUrl);
-        server = HttpServer.create(new InetSocketAddress("localhost", port), 0);
+        server = HttpServer.create(new InetSocketAddress(port), 0);
         server.createContext("/", this::handle);
         server.start();
     }
