@@ -86,3 +86,15 @@ The running app was also checked with `curl.exe -i`: create returned 201, reads 
 Swagger UI documents all task endpoints and lets you send requests from the browser.
 
 ![Task API Swagger UI](docs/swagger-ui.png)
+
+## Postgres setup (A3)
+
+Install and start Docker Desktop. Copy `.env.example` to `.env` before starting Postgres:
+
+```powershell
+Copy-Item .env.example .env
+docker compose up -d db
+docker compose exec db psql -U postgres -d tasks
+```
+
+The `taskdata` volume keeps database rows when the container is recreated. Local passwords belong in the git-ignored `.env` file.
