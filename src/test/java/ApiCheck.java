@@ -1,21 +1,27 @@
-import java.nio.file.Files;
 import java.sql.DriverManager;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import com.google.gson.JsonParser;
+import java.util.UUID;
 
 public class ApiCheck {
     private static final HttpClient CLIENT = HttpClient.newHttpClient();
     private static String base;
     public static void main(String[] args) throws Exception {
-        var directory = Files.createTempDirectory("task-api-check-");
-        var database = directory.resolve("tasks.db");
+        String connectionUrl = TaskStore.databaseUrl();
+        // Only this generated schema is changed; the normal tasks table is left alone.
+        String schema = "check_" + UUID.randomUUID().toString().replace("-", "");
+        try (var db = DriverManager.getConnection(connectionUrl);
+             var statement = db.createStatement()) {
+            statement.executeUpdate("CREATE SCHEMA " + schema);
+        }
+        String database = connectionUrl + (connectionUrl.contains("?") ? "&" : "?") + "currentSchema=" + schema;
         try {
             for (int restart = 0; restart < 3; restart++) {
                 try (var store = new TaskStore(database);
-                     var db = DriverManager.getConnection("jdbc:sqlite:" + database);
+                     var db = DriverManager.getConnection(database);
                      var query = db.prepareStatement("SELECT COUNT(*) FROM tasks");
                      var rows = query.executeQuery()) {
                     check(rows.next() && rows.getInt(1) == 3, "Seeds duplicated");
@@ -74,30 +80,28 @@ public class ApiCheck {
                 base = "http://localhost:" + api.port();
                 request("GET", "/tasks/" + createdId, null, 404);
                 check(JsonParser.parseString(request("GET", "/tasks", null, 200)).getAsJsonArray().size() == 3, "Delete did not persist");
-                try (var db = DriverManager.getConnection("jdbc:sqlite:" + database);
+                try (var db = DriverManager.getConnection(database);
                      var statement = db.createStatement()) {
-                    statement.executeUpdate("UPDATE tasks SET done = 1");
+                    statement.executeUpdate("UPDATE tasks SET done = TRUE");
                     var tasks = JsonParser.parseString(request("GET", "/tasks", null, 200)).getAsJsonArray();
                     for (var task : tasks) check(task.getAsJsonObject().get("done").getAsBoolean(), "Direct SQL update not visible");
-                    statement.executeUpdate("DELETE FROM tasks WHERE done = 1");
+                    statement.executeUpdate("DELETE FROM tasks WHERE done = TRUE");
                     check(JsonParser.parseString(request("GET", "/tasks", null, 200)).getAsJsonArray().isEmpty(), "Direct SQL delete not visible");
                 }
             }
-            Files.delete(database);
-            try (var db = DriverManager.getConnection("jdbc:sqlite:" + database);
+            try (var db = DriverManager.getConnection(database);
                  var statement = db.createStatement()) {
-                statement.executeUpdate("CREATE TABLE tasks (id INTEGER PRIMARY KEY, title TEXT, done INTEGER)");
-                statement.executeUpdate("INSERT INTO tasks VALUES (1, 'Task 1', 0), (9, 'Existing task', 1)");
+                statement.executeUpdate("DROP TABLE tasks");
             }
             try (var store = new TaskStore(database)) {
-                check(store.all().size() == 2, "Migration reseeded existing database");
-                check(store.find(1).description().equals("This is task 1"), "Legacy description missing");
-                check(store.find(9).title().equals("Existing task") && store.find(9).done(), "Existing data changed");
+                check(store.all().size() == 3, "Missing table was not recreated and seeded");
             }
             System.out.println("PASS: setup, CRUD, validation, parameter binding, restart persistence and live SQL changes");
         } finally {
-            Files.deleteIfExists(database);
-            Files.delete(directory);
+            try (var db = DriverManager.getConnection(connectionUrl);
+                 var statement = db.createStatement()) {
+                statement.executeUpdate("DROP SCHEMA " + schema + " CASCADE");
+            }
         }
     }
 

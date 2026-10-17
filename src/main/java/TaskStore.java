@@ -61,22 +61,20 @@ public class TaskStore implements AutoCloseable {
     }
 
     public Task create(String title) throws SQLException {
-        try (var insert = db.prepareStatement("INSERT INTO tasks (title, done) VALUES (?, ?)")) {
+        try (var insert = db.prepareStatement("INSERT INTO tasks (title, done) VALUES (?, ?) RETURNING *")) {
             insert.setString(1, title);
-            insert.setInt(2, 0);
-            insert.executeUpdate();
-        }
-        try (var query = db.prepareStatement("SELECT last_insert_rowid()");
-             var rows = query.executeQuery()) {
-            rows.next();
-            return find(rows.getLong(1));
+            insert.setBoolean(2, false);
+            try (var rows = insert.executeQuery()) {
+                rows.next();
+                return new Task(rows.getLong("id"), rows.getString("title"), rows.getString("description"), rows.getBoolean("done"));
+            }
         }
     }
 
     public Task update(long id, String title, boolean done) throws SQLException {
         try (var update = db.prepareStatement("UPDATE tasks SET title = ?, done = ? WHERE id = ?")) {
             update.setString(1, title);
-            update.setInt(2, done ? 1 : 0);
+            update.setBoolean(2, done);
             update.setLong(3, id);
             update.executeUpdate();
         }
